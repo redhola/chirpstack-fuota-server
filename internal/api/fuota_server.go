@@ -10,16 +10,20 @@ import (
 	"github.com/golang/protobuf/ptypes"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/brocaar/chirpstack-api/go/v3/as/external/api"
-	fapi "github.com/brocaar/chirpstack-api/go/v3/fuota"
-	"github.com/brocaar/chirpstack-fuota-server/internal/fuota"
-	multicast "github.com/brocaar/chirpstack-fuota-server/internal/multicast"
-	"github.com/brocaar/chirpstack-fuota-server/internal/storage"
+	
 	"github.com/brocaar/lorawan"
+	fapi "github.com/chirpstack/chirpstack-fuota-server/v4/api/go"
+	"github.com/chirpstack/chirpstack-fuota-server/v4/internal/fuota"
+	multicast "github.com/brocaar/chirpstack-fuota-server/internal/multicast"
+	"github.com/chirpstack/chirpstack-fuota-server/v4/internal/storage"
+	"github.com/chirpstack/chirpstack/api/go/v4/api"
+	"github.com/chirpstack/chirpstack/api/go/v4/common"
 )
 
 // FUOTAServerAPI implements the FUOTA server API.
-type FUOTAServerAPI struct{}
+type FUOTAServerAPI struct {
+	fapi.UnimplementedFuotaServerServiceServer
+}
 
 // NewFUOTAServerAPI creates a new FUOTAServerAPI.
 func NewFUOTAServerAPI() *FUOTAServerAPI {
@@ -35,6 +39,7 @@ func (a *FUOTAServerAPI) CreateDeployment(ctx context.Context, req *fapi.CreateD
 		MulticastFrequency:                req.GetDeployment().MulticastFrequency,
 		MulticastGroupID:                  uint8(req.GetDeployment().MulticastGroupId),
 		MulticastTimeout:                  uint8(req.GetDeployment().MulticastTimeout),
+		MulticastRegion:                   common.Region(req.GetDeployment().MulticastRegion),
 		FragSize:                          int(req.GetDeployment().FragmentationFragmentSize),
 		Payload:                           req.GetDeployment().Payload,
 		Redundancy:                        int(req.GetDeployment().FragmentationRedundancy),
@@ -49,8 +54,12 @@ func (a *FUOTAServerAPI) CreateDeployment(ctx context.Context, req *fapi.CreateD
 		var devEUI lorawan.EUI64
 		var mcRootKey lorawan.AES128Key
 
-		copy(devEUI[:], d.DevEui)
-		copy(mcRootKey[:], d.McRootKey)
+		if err := devEUI.UnmarshalText([]byte(d.DevEui)); err != nil {
+			return nil, err
+		}
+		if err := mcRootKey.UnmarshalText([]byte(d.McRootKey)); err != nil {
+			return nil, err
+		}
 
 		opts.Devices[devEUI] = fuota.DeviceOptions{
 			McRootKey: mcRootKey,
@@ -85,7 +94,7 @@ func (a *FUOTAServerAPI) CreateDeployment(ctx context.Context, req *fapi.CreateD
 	}(depl)
 
 	return &fapi.CreateDeploymentResponse{
-		Id: depl.GetID().Bytes(),
+		Id: depl.GetID().String(),
 	}, nil
 }
 
@@ -273,7 +282,9 @@ func (a *FUOTAServerAPI) GetDeploymentStatus(ctx context.Context, req *fapi.GetD
 	}
 
 	for _, device := range devices {
-		var dd fapi.DeploymentDeviceStatus
+		dd := fapi.DeploymentDeviceStatus{
+			DevEui: device.DevEUI.String(),
+		}
 		var err error
 
 		dd.CreatedAt, err = ptypes.TimestampProto(device.CreatedAt)
@@ -325,6 +336,15 @@ func (a *FUOTAServerAPI) GetDeploymentDeviceLogs(ctx context.Context, req *fapi.
 	var deploymentID uuid.UUID
 	var devEUI lorawan.EUI64
 	var resp fapi.GetDeploymentDeviceLogsResponse
+
+	deploymentID, err := uuid.FromString(req.GetDeploymentId())
+	if err != nil {
+		return nil, err
+	}
+
+	if err := devEUI.UnmarshalText([]byte(req.GetDevEui())); err != nil {
+		return nil, err
+	}
 
 	copy(deploymentID[:], req.GetDeploymentId())
 	copy(devEUI[:], req.GetDevEui())

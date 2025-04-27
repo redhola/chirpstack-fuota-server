@@ -15,15 +15,16 @@ import (
 	"github.com/lib/pq/hstore"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/brocaar/chirpstack-api/go/v3/as/external/api"
-	"github.com/brocaar/chirpstack-api/go/v3/as/integration"
-	"github.com/brocaar/chirpstack-fuota-server/internal/client/as"
-	"github.com/brocaar/chirpstack-fuota-server/internal/eventhandler"
-	"github.com/brocaar/chirpstack-fuota-server/internal/storage"
 	"github.com/brocaar/lorawan"
 	"github.com/brocaar/lorawan/applayer/fragmentation"
 	"github.com/brocaar/lorawan/applayer/multicastsetup"
 	"github.com/brocaar/lorawan/gps"
+	"github.com/chirpstack/chirpstack-fuota-server/v4/internal/client/as"
+	"github.com/chirpstack/chirpstack-fuota-server/v4/internal/eventhandler"
+	"github.com/chirpstack/chirpstack-fuota-server/v4/internal/storage"
+	"github.com/chirpstack/chirpstack/api/go/v4/api"
+	"github.com/chirpstack/chirpstack/api/go/v4/common"
+	"github.com/chirpstack/chirpstack/api/go/v4/integration"
 )
 
 // FragmentationSessionStatusRequestType type.
@@ -77,7 +78,7 @@ type Deployment struct {
 // DeploymentOptions defines the options for a FUOTA Deployment.
 type DeploymentOptions struct {
 	// The application id.
-	ApplicationID int64
+	ApplicationID string
 
 	// The Devices to include in the update.
 	// Note: the devices must be part of the above application id.
@@ -104,6 +105,9 @@ type DeploymentOptions struct {
 	// has a different meaning for Class-B and Class-C groups.
 	MulticastTimeout uint8
 
+	// MulticastRegion defines the multicast region.
+	MulticastRegion common.Region
+	
 	// UnicastTimeout.
 	// Set this to the value in which you at least expect an uplink frame from
 	// the device. The FUOTA server will wait for the given time before
@@ -289,7 +293,9 @@ func (d *Deployment) Run(ctx context.Context) error {
 // deployment, the uplink is silently discarded.
 func (d *Deployment) HandleUplinkEvent(ctx context.Context, pl integration.UplinkEvent) error {
 	var devEUI lorawan.EUI64
-	copy(devEUI[:], pl.DevEui)
+	if err := devEUI.UnmarshalText([]byte(pl.GetDeviceInfo().GetDevEui())); err != nil {
+		return err
+	}
 	_, found := d.opts.Devices[devEUI]
 
 	if uint8(pl.FPort) == multicastsetup.DefaultFPort && found {
@@ -719,15 +725,16 @@ func (d *Deployment) stepCreateMulticastGroup(ctx context.Context) error {
 	}
 
 	mg := api.MulticastGroup{
-		Name:           fmt.Sprintf("fuota-%s", d.GetID()),
-		McAddr:         d.mcAddr.String(),
-		McNwkSKey:      mcNetSKey.String(),
-		McAppSKey:      mcAppSKey.String(),
-		GroupType:      d.opts.MulticastGroupType,
-		Dr:             uint32(d.opts.MulticastDR),
-		Frequency:      d.opts.MulticastFrequency,
-		PingSlotPeriod: uint32(1 << int(5+d.opts.MulticastPingSlotPeriodicity)), // note: period = 2 ^ (5 + periodicity)
-		ApplicationId:  d.opts.ApplicationID,
+		Name:                 fmt.Sprintf("fuota-%s", d.GetID()),
+		McAddr:               d.mcAddr.String(),
+		McNwkSKey:            mcNetSKey.String(),
+		McAppSKey:            mcAppSKey.String(),
+		GroupType:            d.opts.MulticastGroupType,
+		Dr:                   uint32(d.opts.MulticastDR),
+		Frequency:            d.opts.MulticastFrequency,
+		ClassBPingSlotPeriod: uint32(1 << int(5+d.opts.MulticastPingSlotPeriodicity)), // note: period = 2 ^ (5 + periodicity)
+		ApplicationId:        d.opts.ApplicationID,
+		Region:               d.opts.MulticastRegion,
 	}
 
 	resp, err := as.MulticastGroupClient().Create(ctx, &api.CreateMulticastGroupRequest{
@@ -874,8 +881,8 @@ devLoop:
 				return fmt.Errorf("marshal binary error: %w", err)
 			}
 
-			_, err = as.DeviceQueueClient().Enqueue(ctx, &api.EnqueueDeviceQueueItemRequest{
-				DeviceQueueItem: &api.DeviceQueueItem{
+			_, err = as.DeviceClient().Enqueue(ctx, &api.EnqueueDeviceQueueItemRequest{
+				QueueItem: &api.DeviceQueueItem{
 					DevEui: devEUI.String(),
 					FPort:  uint32(multicastsetup.DefaultFPort),
 					Data:   b,
@@ -986,8 +993,8 @@ devLoop:
 				return fmt.Errorf("marshal binary error: %w", err)
 			}
 
-			_, err = as.DeviceQueueClient().Enqueue(ctx, &api.EnqueueDeviceQueueItemRequest{
-				DeviceQueueItem: &api.DeviceQueueItem{
+			_, err = as.DeviceClient().Enqueue(ctx, &api.EnqueueDeviceQueueItemRequest{
+				QueueItem: &api.DeviceQueueItem{
 					DevEui: devEUI.String(),
 					FPort:  uint32(fragmentation.DefaultFPort),
 					Data:   b,
@@ -1106,8 +1113,8 @@ devLoop:
 				return fmt.Errorf("marshal binary error: %w", err)
 			}
 
-			_, err = as.DeviceQueueClient().Enqueue(ctx, &api.EnqueueDeviceQueueItemRequest{
-				DeviceQueueItem: &api.DeviceQueueItem{
+			_, err = as.DeviceClient().Enqueue(ctx, &api.EnqueueDeviceQueueItemRequest{
+				QueueItem: &api.DeviceQueueItem{
 					DevEui: devEUI.String(),
 					FPort:  uint32(multicastsetup.DefaultFPort),
 					Data:   b,
@@ -1223,8 +1230,8 @@ devLoop:
 				return fmt.Errorf("marshal binary error: %w", err)
 			}
 
-			_, err = as.DeviceQueueClient().Enqueue(ctx, &api.EnqueueDeviceQueueItemRequest{
-				DeviceQueueItem: &api.DeviceQueueItem{
+			_, err = as.DeviceClient().Enqueue(ctx, &api.EnqueueDeviceQueueItemRequest{
+				QueueItem: &api.DeviceQueueItem{
 					DevEui: devEUI.String(),
 					FPort:  uint32(multicastsetup.DefaultFPort),
 					Data:   b,
@@ -1324,8 +1331,8 @@ func (d *Deployment) stepEnqueue(ctx context.Context) error {
 
 	// enqueue the payloads
 	for i, b := range payloads {
-		_, err = as.MulticastGroupClient().Enqueue(ctx, &api.EnqueueMulticastQueueItemRequest{
-			MulticastQueueItem: &api.MulticastQueueItem{
+		_, err = as.MulticastGroupClient().Enqueue(ctx, &api.EnqueueMulticastGroupQueueItemRequest{
+			QueueItem: &api.MulticastGroupQueueItem{
 				MulticastGroupId: d.multicastGroupID,
 				FCnt:             uint32(i),
 				FPort:            uint32(fragmentation.DefaultFPort),
@@ -1407,8 +1414,8 @@ devLoop:
 				return fmt.Errorf("marshal binary error: %w", err)
 			}
 
-			_, err = as.DeviceQueueClient().Enqueue(ctx, &api.EnqueueDeviceQueueItemRequest{
-				DeviceQueueItem: &api.DeviceQueueItem{
+			_, err = as.DeviceClient().Enqueue(ctx, &api.EnqueueDeviceQueueItemRequest{
+				QueueItem: &api.DeviceQueueItem{
 					DevEui: devEUI.String(),
 					FPort:  uint32(fragmentation.DefaultFPort),
 					Data:   b,
