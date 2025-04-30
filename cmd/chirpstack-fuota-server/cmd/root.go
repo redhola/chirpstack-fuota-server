@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/brocaar/chirpstack-fuota-server/internal/config"
+	"github.com/chirpstack/chirpstack-fuota-server/v4/internal/config"
 	"github.com/mitchellh/mapstructure"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -38,9 +38,9 @@ func init() {
 	viper.SetDefault("postgresql.automigrate", true)
 	viper.SetDefault("postgresql.max_idle_connections", 2)
 
-	viper.SetDefault("application_server.event_handler.marshaler", "protobuf")
-	viper.SetDefault("application_server.event_handler.http.bind", "0.0.0.0:8090")
-	viper.SetDefault("application_server.api.server", "localhost:8080")
+	viper.SetDefault("chirpstack.event_handler.marshaler", "protobuf")
+	viper.SetDefault("chirpstack.event_handler.http.bind", "0.0.0.0:8090")
+	viper.SetDefault("chirpstack.api.server", "localhost:8080")
 	viper.SetDefault("fuota_server.api.bind", "0.0.0.0:8070")
 
 	rootCmd.AddCommand(configCmd)

@@ -14,9 +14,9 @@ import (
 	"github.com/golang/protobuf/proto"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/brocaar/chirpstack-api/go/v3/as/integration"
-	"github.com/brocaar/chirpstack-fuota-server/internal/config"
 	"github.com/brocaar/lorawan/applayer/clocksync"
+	"github.com/chirpstack/chirpstack-fuota-server/v4/internal/config"
+	"github.com/chirpstack/chirpstack/api/go/v4/integration"
 )
 
 var handler *Handler
@@ -35,13 +35,13 @@ func Setup(c *config.Config) error {
 	log.Info("eventhandler: setup application-server event-handler")
 
 	opts := HandlerOptions{}
-	switch c.ApplicationServer.EventHandler.Marshaler {
+	switch c.ChirpStack.EventHandler.Marshaler {
 	case "json":
 		opts.JSON = true
 	case "protobuf":
 		opts.JSON = false
 	default:
-		return fmt.Errorf("invalid marshaler option: %s", c.ApplicationServer.EventHandler.Marshaler)
+		return fmt.Errorf("invalid marshaler option: %s", c.ChirpStack.EventHandler.Marshaler)
 	}
 
 	h, err := NewHandler(opts)
@@ -52,13 +52,13 @@ func Setup(c *config.Config) error {
 	handler = h
 	server := http.Server{
 		Handler: handler,
-		Addr:    c.ApplicationServer.EventHandler.HTTP.Bind,
+		Addr:    c.ChirpStack.EventHandler.HTTP.Bind,
 	}
 
 	go func() {
 		log.WithFields(log.Fields{
-			"bind":      c.ApplicationServer.EventHandler.HTTP.Bind,
-			"marshaler": c.ApplicationServer.EventHandler.Marshaler,
+			"bind":      c.ChirpStack.EventHandler.HTTP.Bind,
+			"marshaler": c.ChirpStack.EventHandler.Marshaler,
 		}).Info("integration/eventhandler: starting event-handler server")
 		err := server.ListenAndServe()
 		log.WithError(err).Error("eventhandler: start event-handler server error")
@@ -129,7 +129,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	log.WithFields(log.Fields{
 		"event":   event,
-		"dev_eui": hex.EncodeToString(uplinkEvent.DevEui),
+		"dev_eui": uplinkEvent.GetDeviceInfo().GetDevEui(),
 		"f_cnt":   uplinkEvent.FCnt,
 		"f_port":  uplinkEvent.FPort,
 		"data":    hex.EncodeToString(uplinkEvent.Data),
