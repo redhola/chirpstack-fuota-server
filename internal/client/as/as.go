@@ -9,8 +9,8 @@ import (
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 
-	"github.com/brocaar/chirpstack-api/go/v3/as/external/api"
-	"github.com/brocaar/chirpstack-fuota-server/internal/config"
+	"github.com/chirpstack/chirpstack-fuota-server/v4/internal/config"
+	"github.com/chirpstack/chirpstack/api/go/v4/api"
 )
 
 var (
@@ -18,7 +18,7 @@ var (
 
 	applicationClient    api.ApplicationServiceClient
 	multicastGroupClient api.MulticastGroupServiceClient
-	deviceQueueClient    api.DeviceQueueServiceClient
+	deviceClient         api.DeviceServiceClient
 )
 
 type APIToken string
@@ -44,20 +44,20 @@ func Setup(conf *config.Config) error {
 
 	opts := []grpc.DialOption{
 		grpc.WithBlock(),
-		grpc.WithPerRPCCredentials(APIToken(conf.ApplicationServer.API.Token)),
+		grpc.WithPerRPCCredentials(APIToken(conf.ChirpStack.API.Token)),
 		grpc.WithUnaryInterceptor(
 			grpc_logrus.UnaryClientInterceptor(logrusEntry, logrusOpts...),
 		),
 	}
 
-	if !conf.ApplicationServer.API.TLSEnabled {
+	if !conf.ChirpStack.API.TLSEnabled {
 		opts = append(opts, grpc.WithInsecure())
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	client, err := grpc.DialContext(ctx, conf.ApplicationServer.API.Server, opts...)
+	client, err := grpc.DialContext(ctx, conf.ChirpStack.API.Server, opts...)
 	if err != nil {
 		return fmt.Errorf("dial application-server api error: %w", err)
 	}
@@ -66,7 +66,7 @@ func Setup(conf *config.Config) error {
 
 	applicationClient = api.NewApplicationServiceClient(clientConn)
 	multicastGroupClient = api.NewMulticastGroupServiceClient(clientConn)
-	deviceQueueClient = api.NewDeviceQueueServiceClient(clientConn)
+	deviceClient = api.NewDeviceServiceClient(clientConn)
 
 	return nil
 }
@@ -79,10 +79,10 @@ func MulticastGroupClient() api.MulticastGroupServiceClient {
 	return multicastGroupClient
 }
 
-func DeviceQueueClient() api.DeviceQueueServiceClient {
-	return deviceQueueClient
+func DeviceClient() api.DeviceServiceClient {
+	return deviceClient
 }
 
-func SetDeviceQueueClient(c api.DeviceQueueServiceClient) {
-	deviceQueueClient = c
+func SetDeviceClient(c api.DeviceServiceClient) {
+	deviceClient = c
 }
